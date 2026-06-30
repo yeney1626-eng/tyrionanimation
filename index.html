@@ -157,6 +157,13 @@
     <!-- LEFT: INPUT -->
     <div>
       <div class="panel">
+        <span class="eyebrow">00 — Setup (optional, recommended)</span>
+        <label for="geminiKey">Free Google Gemini API key</label>
+        <input type="text" id="geminiKey" placeholder="AIza...">
+        <div class="status">Get one free, no card needed, at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> — daily quota that refreshes every 24h. Saved in your browser only. After creating it, click "Edit" on the key and restrict it to your site's domain under "Website restrictions" so it can't be used elsewhere. Leave blank to use a slower no-setup fallback instead.</div>
+      </div>
+
+      <div class="panel">
         <span class="eyebrow">01 — The Idea</span>
         <label for="idea">What's the animation about?</label>
         <textarea id="idea" placeholder="e.g. A 15-second explainer introducing 'Driftwood', a coffee subscription. Open on the logo, show three steps (pick beans, roast, ship), close on the tagline 'Fresh, on your schedule.'"></textarea>
@@ -368,33 +375,51 @@ Rules:
 - Ensure valid hex colors and that the overall palette matches the style direction.
 - Output raw JSON only.`;
 
-  if(typeof puter === 'undefined'){
-    setStatus(genStatus, 'AI library failed to load — check your internet connection and reload.', true);
-    generateBtn.disabled = false;
-    return;
+  const geminiKey = document.getElementById('geminiKey').value.trim();
+  try{ if(geminiKey) localStorage.setItem('geminiKey', geminiKey); }catch(e){}
+
+  async function callGemini(){
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: schemaPrompt }] }],
+        generationConfig: { temperature: 0.8 }
+      })
+    });
+    if(!resp.ok){
+      const errBody = await resp.text().catch(()=> '');
+      throw new Error(`Gemini returned ${resp.status}${errBody ? ': ' + errBody.slice(0,200) : ''}`);
+    }
+    const data = await resp.json();
+    return data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+  }
+
+  async function callPuter(){
+    if(typeof puter === 'undefined') throw new Error('fallback AI library failed to load');
+    const response = await puter.ai.chat(schemaPrompt, { model: "anthropic/claude-sonnet-4-6", temperature: 0.8 });
+    if(typeof response === 'string') return response;
+    if(response?.message?.content){
+      const c = response.message.content;
+      return Array.isArray(c) ? (c.find(b => b.text)?.text || '') : c;
+    }
+    return response?.text || '';
   }
 
   try{
-    const callApi = () => puter.ai.chat(schemaPrompt, {
-      model: "anthropic/claude-sonnet-4-6",
-      temperature: 0.8
-    });
-    let response;
-    try{
-      response = await callApi();
-    } catch(firstErr){
-      setStatus(genStatus, 'AI service hiccuped, retrying…');
-      await new Promise(r => setTimeout(r, 1500));
-      response = await callApi();
-    }
     let text = '';
-    if(typeof response === 'string'){
-      text = response;
-    } else if(response?.message?.content){
-      const c = response.message.content;
-      text = Array.isArray(c) ? (c.find(b => b.text)?.text || '') : c;
-    } else if(response?.text){
-      text = response.text;
+    if(geminiKey){
+      try{
+        setStatus(genStatus, 'Directing the animation (Gemini)…');
+        text = await callGemini();
+      } catch(geminiErr){
+        console.warn('Gemini failed, falling back to Puter:', geminiErr);
+        setStatus(genStatus, 'Gemini hiccuped, trying fallback…');
+        text = await callPuter();
+      }
+    } else {
+      setStatus(genStatus, 'Directing the animation (no key set — using fallback)…');
+      text = await callPuter();
     }
     text = text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
     const firstBrace = text.indexOf('{');
@@ -410,7 +435,7 @@ Rules:
     enablePlayback();
   } catch(err){
     console.error(err);
-    setStatus(genStatus, 'Could not generate a plan: ' + err.message + ' — if a Puter sign-in popup appeared, complete it (it\'s free) and try again.', true);
+    setStatus(genStatus, 'Could not generate a plan: ' + err.message + ' — if a Puter sign-in popup appeared, complete it (it\'s free) and try again. If using Gemini, double-check your key and domain restriction.', true);
   } finally {
     generateBtn.disabled = false;
   }
@@ -641,6 +666,11 @@ async function exportVideo(){
 }
 
 // initial blank frame
+try{
+  const savedGeminiKey = localStorage.getItem('geminiKey');
+  if(savedGeminiKey) document.getElementById('geminiKey').value = savedGeminiKey;
+}catch(e){}
+
 canvas.width = 1080; canvas.height = 1350;
 ctx.fillStyle = '#111';
 ctx.fillRect(0,0,canvas.width,canvas.height);
