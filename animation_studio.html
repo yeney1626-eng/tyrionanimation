@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Motionbench — AI Motion Graphics Studio</title>
+<script src="https://js.puter.com/v2/"></script>
 <style>
   :root{
     --ink:#0c0f0a;
@@ -327,28 +328,34 @@ Rules:
 - Ensure valid hex colors and that the overall palette matches the style direction.
 - Output raw JSON only.`;
 
+  if(typeof puter === 'undefined'){
+    setStatus(genStatus, 'AI library failed to load — check your internet connection and reload.', true);
+    generateBtn.disabled = false;
+    return;
+  }
+
   try{
-    const callApi = () => fetch("https://text.pollinations.ai/openai", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "openai",
-        messages: [{ role: "user", content: schemaPrompt }],
-        temperature: 0.8
-      })
+    const callApi = () => puter.ai.chat(schemaPrompt, {
+      model: "anthropic/claude-sonnet-4-6",
+      temperature: 0.8
     });
     let response;
     try{
       response = await callApi();
-      if(!response.ok) throw new Error(`status ${response.status}`);
     } catch(firstErr){
-      setStatus(genStatus, 'Free AI service hiccuped, retrying…');
+      setStatus(genStatus, 'AI service hiccuped, retrying…');
       await new Promise(r => setTimeout(r, 1500));
       response = await callApi();
-      if(!response.ok) throw new Error(`AI service returned ${response.status}`);
     }
-    const data = await response.json();
-    let text = data?.choices?.[0]?.message?.content || '';
+    let text = '';
+    if(typeof response === 'string'){
+      text = response;
+    } else if(response?.message?.content){
+      const c = response.message.content;
+      text = Array.isArray(c) ? (c.find(b => b.text)?.text || '') : c;
+    } else if(response?.text){
+      text = response.text;
+    }
     text = text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
     const firstBrace = text.indexOf('{');
     const lastBrace = text.lastIndexOf('}');
@@ -363,7 +370,7 @@ Rules:
     enablePlayback();
   } catch(err){
     console.error(err);
-    setStatus(genStatus, 'Could not generate a plan: ' + err.message + ' — the free AI service may be rate-limited, try again in a few seconds.', true);
+    setStatus(genStatus, 'Could not generate a plan: ' + err.message + ' — if a Puter sign-in popup appeared, complete it (it\'s free) and try again.', true);
   } finally {
     generateBtn.disabled = false;
   }
