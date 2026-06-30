@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Motionbench — AI Motion Graphics Studio</title>
 <script src="https://js.puter.com/v2/"></script>
 <style>
@@ -108,6 +109,36 @@
 
   .num{font-family:var(--mono);color:var(--amber);font-weight:700;}
   footer{font-family:var(--mono);font-size:11px;color:#8a8367;text-align:center;margin-top:40px;}
+
+  /* ---- Mobile ---- */
+  @media (max-width:640px){
+    .wrap{padding:18px 14px 60px;}
+    header{flex-direction:column;align-items:flex-start;gap:8px;padding-bottom:12px;margin-bottom:20px;}
+    h1{font-size:24px;}
+    .brand{font-size:11px;}
+    .tag{text-align:left;max-width:100%;font-size:11px;}
+
+    .panel{padding:16px;box-shadow:3px 3px 0 var(--ink);}
+    .panel + .panel{margin-top:16px;}
+
+    .row{flex-direction:column;gap:0;}
+    .row > div{flex:none;}
+
+    /* Prevent iOS auto-zoom on focus by keeping inputs at 16px+ */
+    textarea, select, input[type=text]{font-size:16px;padding:12px;}
+    label{font-size:11px;}
+
+    button.primary{padding:16px;font-size:13px;}
+    .dropzone{padding:20px 12px;}
+    .asset-thumb{width:48px;height:48px;}
+
+    .transport{flex-wrap:wrap;gap:8px;}
+    .transport .scrub{order:3;flex-basis:100%;margin-top:4px;}
+    .time{width:auto;font-size:11px;}
+    button.ghost{padding:11px 12px;font-size:11px;flex:1;text-align:center;}
+
+    pre#planView{font-size:10px;}
+  }
 </style>
 </head>
 <body>
@@ -151,6 +182,14 @@
           </div>
         </div>
 
+        <label for="format">Canvas format</label>
+        <select id="format">
+          <option value="1080x1350" selected>Portrait 4:5 — Facebook/Instagram feed ad (1080×1350)</option>
+          <option value="1080x1920">Portrait 9:16 — Stories/Reels ad (1080×1920)</option>
+          <option value="1080x1080">Square 1:1 — feed post (1080×1080)</option>
+          <option value="1280x720">Landscape 16:9 — YouTube/web (1280×720)</option>
+        </select>
+
         <label>Your assets (images become scene elements)</label>
         <div class="dropzone" id="dropzone">Click or drop images here (logos, photos, icons)</div>
         <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
@@ -183,9 +222,9 @@
           <div>
             <label for="exportRes">Export resolution</label>
             <select id="exportRes">
-              <option value="1280">720p (fastest)</option>
-              <option value="1920" selected>1080p (recommended)</option>
-              <option value="3840">4K — 2160p (slowest, largest file)</option>
+              <option value="1">Native (matches chosen format)</option>
+              <option value="1.5" selected>1.5× (sharper, recommended)</option>
+              <option value="2">2× (near-4K equivalent, slowest)</option>
             </select>
           </div>
         </div>
@@ -274,12 +313,13 @@ async function generatePlan(){
 
   const style = document.getElementById('style').value;
   const duration = document.getElementById('duration').value;
+  const [fmtW, fmtH] = document.getElementById('format').value.split('x').map(Number);
   const assetDescriptions = assets.map((a,i) => `assetIndex ${i}: file named "${a.name}"`).join('\n') || 'No image assets provided — use text and simple vector shapes (rect/circle) only.';
 
   generateBtn.disabled = true;
   setStatus(genStatus, 'Directing the animation…');
 
-  const schemaPrompt = `You are a motion graphics director. Output ONLY a single JSON object (no markdown fences, no prose) describing a ${duration}-second animated explainer, canvas size 1280x720.
+  const schemaPrompt = `You are a motion graphics director. Output ONLY a single JSON object (no markdown fences, no prose) describing a ${duration}-second animated explainer, canvas size ${fmtW}x${fmtH}.
 
 Style direction: ${style}
 
@@ -291,8 +331,8 @@ ${assetDescriptions}
 
 Return JSON matching exactly this schema:
 {
-  "width": 1280,
-  "height": 720,
+  "width": ${fmtW},
+  "height": ${fmtH},
   "duration": ${duration},
   "background": "#hexcolor",
   "elements": [
@@ -309,16 +349,16 @@ Return JSON matching exactly this schema:
       "start": 0,                  // seconds into the timeline this element becomes active
       "end": 4,                    // seconds into the timeline this element stops being drawn
       "keyframes": [
-        {"t":0, "x":640,"y":360,"scale":0,"opacity":0,"rotation":0},
-        {"t":0.3,"x":640,"y":360,"scale":1,"opacity":1,"rotation":0},
-        {"t":1,"x":640,"y":300,"scale":1,"opacity":1,"rotation":0}
+        {"t":0, "x":${Math.round(fmtW/2)},"y":${Math.round(fmtH/2)},"scale":0,"opacity":0,"rotation":0},
+        {"t":0.3,"x":${Math.round(fmtW/2)},"y":${Math.round(fmtH/2)},"scale":1,"opacity":1,"rotation":0},
+        {"t":1,"x":${Math.round(fmtW/2)},"y":${Math.round(fmtH*0.42)},"scale":1,"opacity":1,"rotation":0}
       ]
     }
   ]
 }
 
 Rules:
-- x,y are the CENTER point of the element in canvas pixels (0,0 top-left, 1280x720 canvas).
+- x,y are the CENTER point of the element in canvas pixels (0,0 top-left, ${fmtW}x${fmtH} canvas). This is a ${fmtW>fmtH ? 'landscape' : fmtW===fmtH ? 'square' : 'tall portrait'} format — design layouts and text sizing accordingly (for portrait/square, stack elements vertically and keep text large enough to read on a phone screen; avoid wide horizontal layouts that would get cropped).
 - t in keyframes is a fraction (0 to 1) of that element's own (end-start) duration. Always include a keyframe at t=0 and t=1. Use 3-6 keyframes per element for natural easing (ease in, hold, ease out).
 - scale 0 means invisible/tiny, 1 is natural size.
 - Stagger element start/end times to build a coherent scene-by-scene sequence across the full ${duration} seconds — do not have everything appear at once unless that's the desired effect.
@@ -378,7 +418,7 @@ Rules:
 
 function validatePlan(p){
   if(!p || !Array.isArray(p.elements)) throw new Error('malformed plan');
-  p.width = p.width || 1280; p.height = p.height || 720;
+  p.width = p.width || 1080; p.height = p.height || 1350;
   p.duration = Number(p.duration) || 12;
   p.background = p.background || '#111111';
   p.elements.forEach(el => {
@@ -473,6 +513,8 @@ function drawFrame(tGlobal, targetCtx, targetCanvas){
 
 // ---------- Playback ----------
 function enablePlayback(){
+  canvas.width = plan.width;
+  canvas.height = plan.height;
   playBtn.disabled = false;
   restartBtn.disabled = false;
   exportBtn.disabled = false;
@@ -537,8 +579,9 @@ async function exportVideo(){
   pausePlayback();
   exportBtn.disabled = true;
 
-  const targetW = parseInt(document.getElementById('exportRes').value, 10);
-  const targetH = Math.round(targetW * (plan.height / plan.width));
+  const resMultiplier = parseFloat(document.getElementById('exportRes').value);
+  const targetW = Math.round(plan.width * resMultiplier);
+  const targetH = Math.round(plan.height * resMultiplier);
 
   // Off-screen canvas at the chosen export resolution
   const exportCanvas = document.createElement('canvas');
@@ -598,6 +641,7 @@ async function exportVideo(){
 }
 
 // initial blank frame
+canvas.width = 1080; canvas.height = 1350;
 ctx.fillStyle = '#111';
 ctx.fillRect(0,0,canvas.width,canvas.height);
 ctx.fillStyle = '#888';
