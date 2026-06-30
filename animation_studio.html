@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Motionbench — AI Motion Graphics Studio</title>
+<style>
+  :root{
+    --ink:#0c0f0a;
+    --paper:#f3f1e7;
+    --moss:#3c5a3a;
+    --moss-bright:#6a9c5f;
+    --amber:#d98e3a;
+    --line:#cfc9b4;
+    --mono: 'Courier New', Courier, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family: Georgia, 'Times New Roman', serif;
+    min-height:100vh;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 80px;}
+  header{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    border-bottom:3px solid var(--ink);padding-bottom:14px;margin-bottom:26px;
+  }
+  .brand{font-family:var(--mono);font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--moss);}
+  h1{font-size:34px;margin:4px 0 0;font-weight:700;letter-spacing:-0.01em;}
+  .tag{font-family:var(--mono);font-size:12px;color:#665f4a;text-align:right;max-width:280px;line-height:1.5;}
+
+  .grid{display:grid;grid-template-columns:1fr 1.3fr;gap:26px;}
+  @media (max-width:900px){.grid{grid-template-columns:1fr;}}
+
+  .panel{
+    background:#fffdf6;border:1px solid var(--line);
+    box-shadow:4px 4px 0 var(--ink);
+    padding:20px;
+  }
+  .panel + .panel{margin-top:22px;}
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--amber);margin-bottom:10px;display:block;
+  }
+  label{display:block;font-family:var(--mono);font-size:12px;margin:14px 0 6px;color:#444;}
+  textarea, select, input[type=text]{
+    width:100%;font-family:Georgia,serif;font-size:14px;padding:10px;
+    border:1px solid var(--line);background:#fffefb;color:var(--ink);
+    resize:vertical;
+  }
+  textarea{min-height:90px;}
+  .row{display:flex;gap:12px;}
+  .row > div{flex:1;}
+
+  .dropzone{
+    border:2px dashed var(--line);padding:16px;text-align:center;
+    font-family:var(--mono);font-size:12px;color:#665f4a;cursor:pointer;
+    margin-top:14px;
+  }
+  .dropzone.drag{border-color:var(--moss-bright);background:#eef4ea;}
+  #assetList{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+  .asset-thumb{
+    width:54px;height:54px;border:1px solid var(--ink);position:relative;
+    background-size:cover;background-position:center;
+  }
+  .asset-thumb button{
+    position:absolute;top:-7px;right:-7px;width:16px;height:16px;border-radius:50%;
+    background:var(--ink);color:#fff;border:none;font-size:10px;line-height:1;cursor:pointer;
+  }
+
+  button.primary{
+    margin-top:18px;width:100%;
+    background:var(--ink);color:#fff;border:none;
+    font-family:var(--mono);font-size:13px;letter-spacing:.1em;text-transform:uppercase;
+    padding:14px;cursor:pointer;transition:background .15s;
+  }
+  button.primary:hover{background:var(--moss);}
+  button.primary:disabled{background:#999;cursor:wait;}
+
+  button.ghost{
+    background:transparent;border:1px solid var(--ink);color:var(--ink);
+    font-family:var(--mono);font-size:12px;padding:9px 14px;cursor:pointer;
+  }
+  button.ghost:hover{background:var(--ink);color:#fff;}
+  button.ghost:disabled{opacity:.4;cursor:not-allowed;}
+
+  .stage-frame{
+    background:var(--ink);padding:10px;
+  }
+  canvas{display:block;width:100%;height:auto;background:#000;}
+
+  .transport{display:flex;align-items:center;gap:10px;margin-top:14px;}
+  .scrub{flex:1;-webkit-appearance:none;height:4px;background:var(--line);outline:none;}
+  .scrub::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;background:var(--amber);border:1px solid var(--ink);cursor:pointer;}
+  .time{font-family:var(--mono);font-size:12px;width:88px;text-align:right;}
+
+  .status{font-family:var(--mono);font-size:12px;color:#665f4a;margin-top:10px;min-height:16px;}
+  .status.err{color:#a33;}
+  .status.ok{color:var(--moss);}
+
+  .plan-toggle{font-family:var(--mono);font-size:11px;color:var(--moss);cursor:pointer;text-decoration:underline;margin-top:10px;display:inline-block;}
+  pre#planView{
+    display:none;max-height:220px;overflow:auto;background:#11150d;color:#cfe8c6;
+    font-size:11px;padding:12px;margin-top:8px;
+  }
+
+  .num{font-family:var(--mono);color:var(--amber);font-weight:700;}
+  footer{font-family:var(--mono);font-size:11px;color:#8a8367;text-align:center;margin-top:40px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="brand">Motionbench / No. 01</div>
+      <h1>AI Motion Graphics Studio</h1>
+    </div>
+    <div class="tag">Describe a scene, hand over your assets, and an AI director blocks out the timing, motion, and pacing. Free, runs entirely in this tab.</div>
+  </header>
+
+  <div class="grid">
+
+    <!-- LEFT: INPUT -->
+    <div>
+      <div class="panel">
+        <span class="eyebrow">01 — The Idea</span>
+        <label for="idea">What's the animation about?</label>
+        <textarea id="idea" placeholder="e.g. A 15-second explainer introducing 'Driftwood', a coffee subscription. Open on the logo, show three steps (pick beans, roast, ship), close on the tagline 'Fresh, on your schedule.'"></textarea>
+
+        <div class="row">
+          <div>
+            <label for="style">Visual style</label>
+            <select id="style">
+              <option value="clean corporate, lots of whitespace, confident sans-serif type, single accent color">Clean corporate</option>
+              <option value="bold playful, saturated colors, bouncy easing, rounded shapes" selected>Bold &amp; playful</option>
+              <option value="minimal dark mode, high contrast, restrained motion, single bright accent">Minimal dark</option>
+              <option value="hand-crafted paper / collage feel, warm tones, gentle drift">Paper &amp; collage</option>
+            </select>
+          </div>
+          <div>
+            <label for="duration">Target length</label>
+            <select id="duration">
+              <option value="8">8 seconds</option>
+              <option value="12" selected>12 seconds</option>
+              <option value="18">18 seconds</option>
+              <option value="25">25 seconds</option>
+            </select>
+          </div>
+        </div>
+
+        <label>Your assets (images become scene elements)</label>
+        <div class="dropzone" id="dropzone">Click or drop images here (logos, photos, icons)</div>
+        <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
+        <div id="assetList"></div>
+
+        <button class="primary" id="generateBtn">Generate Animation</button>
+        <div class="status" id="genStatus"></div>
+        <span class="plan-toggle" id="planToggle" style="display:none;">view generated plan (json)</span>
+        <pre id="planView"></pre>
+      </div>
+    </div>
+
+    <!-- RIGHT: STAGE -->
+    <div>
+      <div class="panel">
+        <span class="eyebrow">02 — Preview</span>
+        <div class="stage-frame">
+          <canvas id="stage" width="1280" height="720"></canvas>
+        </div>
+        <div class="transport">
+          <button class="ghost" id="playBtn" disabled>▶ Play</button>
+          <input type="range" class="scrub" id="scrub" min="0" max="1000" value="0" disabled>
+          <span class="time" id="timeLabel">0.0 / 0.0s</span>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:10px;">
+          <button class="ghost" id="restartBtn" disabled>↺ Restart</button>
+          <button class="ghost" id="exportBtn" disabled>⬇ Export Video</button>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <div>
+            <label for="exportRes">Export resolution</label>
+            <select id="exportRes">
+              <option value="1280">720p (fastest)</option>
+              <option value="1920" selected>1080p (recommended)</option>
+              <option value="3840">4K — 2160p (slowest, largest file)</option>
+            </select>
+          </div>
+        </div>
+        <div class="status" id="exportStatus"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>Rendered client-side on an HTML5 canvas · animation plan generated by an AI model · no uploads leave your browser except the prompt text describing your idea</footer>
+</div>
+
+<script>
+// ---------- State ----------
+let assets = []; // {dataUrl, img(Image), name}
+let plan = null;
+let playing = false;
+let startTime = 0; // performance.now() offset
+let pausedAt = 0;  // seconds into animation
+let rafId = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const assetList = document.getElementById('assetList');
+const generateBtn = document.getElementById('generateBtn');
+const genStatus = document.getElementById('genStatus');
+const planToggle = document.getElementById('planToggle');
+const planView = document.getElementById('planView');
+const playBtn = document.getElementById('playBtn');
+const restartBtn = document.getElementById('restartBtn');
+const exportBtn = document.getElementById('exportBtn');
+const scrub = document.getElementById('scrub');
+const timeLabel = document.getElementById('timeLabel');
+const exportStatus = document.getElementById('exportStatus');
+
+// ---------- Asset handling ----------
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(files){
+  [...files].forEach(file => {
+    if(!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        assets.push({dataUrl: ev.target.result, img, name: file.name});
+        renderAssetList();
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderAssetList(){
+  assetList.innerHTML = '';
+  assets.forEach((a, i) => {
+    const div = document.createElement('div');
+    div.className = 'asset-thumb';
+    div.style.backgroundImage = `url(${a.dataUrl})`;
+    const btn = document.createElement('button');
+    btn.textContent = '×';
+    btn.onclick = (ev) => { ev.stopPropagation(); assets.splice(i,1); renderAssetList(); };
+    div.appendChild(btn);
+    assetList.appendChild(div);
+  });
+}
+
+// ---------- AI plan generation ----------
+generateBtn.addEventListener('click', generatePlan);
+
+async function generatePlan(){
+  const idea = document.getElementById('idea').value.trim();
+  if(!idea){ setStatus(genStatus, 'Describe your idea first.', true); return; }
+
+  const style = document.getElementById('style').value;
+  const duration = document.getElementById('duration').value;
+  const assetDescriptions = assets.map((a,i) => `assetIndex ${i}: file named "${a.name}"`).join('\n') || 'No image assets provided — use text and simple vector shapes (rect/circle) only.';
+
+  generateBtn.disabled = true;
+  setStatus(genStatus, 'Directing the animation…');
+
+  const schemaPrompt = `You are a motion graphics director. Output ONLY a single JSON object (no markdown fences, no prose) describing a ${duration}-second animated explainer, canvas size 1280x720.
+
+Style direction: ${style}
+
+User's idea:
+"""${idea}"""
+
+Available image assets (reference by assetIndex, do NOT invent assets beyond what's listed):
+${assetDescriptions}
+
+Return JSON matching exactly this schema:
+{
+  "width": 1280,
+  "height": 720,
+  "duration": ${duration},
+  "background": "#hexcolor",
+  "elements": [
+    {
+      "type": "image" | "text" | "rect" | "circle",
+      "assetIndex": 0,            // required only if type is "image", must reference a listed assetIndex
+      "text": "string",            // required only if type is "text"
+      "color": "#hexcolor",        // text fill color, or shape fill color
+      "fontSize": 48,              // for text
+      "fontWeight": "700",         // for text, "400" or "700"
+      "width": 200,                // for rect/image bounding box at scale=1 (image will be fit within this box preserving aspect ratio)
+      "height": 120,               // for rect/image
+      "radius": 60,                // for circle
+      "start": 0,                  // seconds into the timeline this element becomes active
+      "end": 4,                    // seconds into the timeline this element stops being drawn
+      "keyframes": [
+        {"t":0, "x":640,"y":360,"scale":0,"opacity":0,"rotation":0},
+        {"t":0.3,"x":640,"y":360,"scale":1,"opacity":1,"rotation":0},
+        {"t":1,"x":640,"y":300,"scale":1,"opacity":1,"rotation":0}
+      ]
+    }
+  ]
+}
+
+Rules:
+- x,y are the CENTER point of the element in canvas pixels (0,0 top-left, 1280x720 canvas).
+- t in keyframes is a fraction (0 to 1) of that element's own (end-start) duration. Always include a keyframe at t=0 and t=1. Use 3-6 keyframes per element for natural easing (ease in, hold, ease out).
+- scale 0 means invisible/tiny, 1 is natural size.
+- Stagger element start/end times to build a coherent scene-by-scene sequence across the full ${duration} seconds — do not have everything appear at once unless that's the desired effect.
+- Use 6-14 elements total: mix of background shapes, text titles/captions, and any provided image assets.
+- Every image asset provided MUST be used at least once.
+- Keep all text short (under 6 words per text element) since this is motion graphics, not a slideshow.
+- Ensure valid hex colors and that the overall palette matches the style direction.
+- Output raw JSON only.`;
+
+  try{
+    const callApi = () => fetch("https://text.pollinations.ai/openai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "openai",
+        messages: [{ role: "user", content: schemaPrompt }],
+        temperature: 0.8
+      })
+    });
+    let response;
+    try{
+      response = await callApi();
+      if(!response.ok) throw new Error(`status ${response.status}`);
+    } catch(firstErr){
+      setStatus(genStatus, 'Free AI service hiccuped, retrying…');
+      await new Promise(r => setTimeout(r, 1500));
+      response = await callApi();
+      if(!response.ok) throw new Error(`AI service returned ${response.status}`);
+    }
+    const data = await response.json();
+    let text = data?.choices?.[0]?.message?.content || '';
+    text = text.trim().replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if(firstBrace === -1 || lastBrace === -1) throw new Error('AI did not return JSON');
+    text = text.slice(firstBrace, lastBrace+1);
+    const parsedPlan = JSON.parse(text);
+    validatePlan(parsedPlan);
+    plan = parsedPlan;
+    planView.textContent = JSON.stringify(plan, null, 2);
+    planToggle.style.display = 'inline-block';
+    setStatus(genStatus, `Plan ready — ${plan.elements.length} elements over ${plan.duration}s.`, false, true);
+    enablePlayback();
+  } catch(err){
+    console.error(err);
+    setStatus(genStatus, 'Could not generate a plan: ' + err.message + ' — the free AI service may be rate-limited, try again in a few seconds.', true);
+  } finally {
+    generateBtn.disabled = false;
+  }
+}
+
+function validatePlan(p){
+  if(!p || !Array.isArray(p.elements)) throw new Error('malformed plan');
+  p.width = p.width || 1280; p.height = p.height || 720;
+  p.duration = Number(p.duration) || 12;
+  p.background = p.background || '#111111';
+  p.elements.forEach(el => {
+    el.start = Number(el.start) || 0;
+    el.end = Math.max(Number(el.end) || (el.start+1), el.start+0.1);
+    if(!Array.isArray(el.keyframes) || el.keyframes.length === 0){
+      el.keyframes = [{t:0,x:p.width/2,y:p.height/2,scale:1,opacity:1,rotation:0},{t:1,x:p.width/2,y:p.height/2,scale:1,opacity:1,rotation:0}];
+    }
+    el.keyframes.sort((a,b)=>a.t-b.t);
+  });
+}
+
+planToggle.addEventListener('click', () => {
+  planView.style.display = planView.style.display === 'block' ? 'none' : 'block';
+});
+
+function setStatus(el, msg, isErr, isOk){
+  el.textContent = msg;
+  el.className = 'status' + (isErr ? ' err' : isOk ? ' ok' : '');
+}
+
+// ---------- Rendering ----------
+function lerp(a,b,f){ return a + (b-a)*f; }
+
+function getElementProps(el, tGlobal){
+  if(tGlobal < el.start || tGlobal > el.end) return null;
+  const localT = Math.min(1, Math.max(0, (tGlobal - el.start) / (el.end - el.start)));
+  const kfs = el.keyframes;
+  let lo = kfs[0], hi = kfs[kfs.length-1];
+  for(let i=0;i<kfs.length-1;i++){
+    if(localT >= kfs[i].t && localT <= kfs[i+1].t){ lo = kfs[i]; hi = kfs[i+1]; break; }
+  }
+  const span = (hi.t - lo.t) || 1;
+  const f = (localT - lo.t) / span;
+  return {
+    x: lerp(lo.x, hi.x, f),
+    y: lerp(lo.y, hi.y, f),
+    scale: lerp(lo.scale ?? 1, hi.scale ?? 1, f),
+    opacity: lerp(lo.opacity ?? 1, hi.opacity ?? 1, f),
+    rotation: lerp(lo.rotation ?? 0, hi.rotation ?? 0, f)
+  };
+}
+
+function drawFrame(tGlobal, targetCtx, targetCanvas){
+  if(!plan) return;
+  const c = targetCtx || ctx;
+  const cv = targetCanvas || canvas;
+  const scaleFactor = cv.width / plan.width;
+  c.clearRect(0,0,cv.width,cv.height);
+  c.fillStyle = plan.background;
+  c.fillRect(0,0,cv.width,cv.height);
+  c.save();
+  c.scale(scaleFactor, scaleFactor);
+
+  plan.elements.forEach(el => {
+    const props = getElementProps(el, tGlobal);
+    if(!props || props.opacity <= 0.01) return;
+    c.save();
+    c.globalAlpha = Math.max(0, Math.min(1, props.opacity));
+    c.translate(props.x, props.y);
+    c.rotate((props.rotation || 0) * Math.PI/180);
+    c.scale(props.scale, props.scale);
+
+    if(el.type === 'text'){
+      c.fillStyle = el.color || '#ffffff';
+      c.font = `${el.fontWeight||'700'} ${el.fontSize||48}px Arial, sans-serif`;
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(el.text || '', 0, 0);
+    } else if(el.type === 'rect'){
+      c.fillStyle = el.color || '#888888';
+      const w = el.width||200, h = el.height||120;
+      c.fillRect(-w/2, -h/2, w, h);
+    } else if(el.type === 'circle'){
+      c.fillStyle = el.color || '#888888';
+      c.beginPath();
+      c.arc(0,0, el.radius||60, 0, Math.PI*2);
+      c.fill();
+    } else if(el.type === 'image'){
+      const asset = assets[el.assetIndex];
+      if(asset && asset.img && asset.img.complete){
+        const boxW = el.width || 200, boxH = el.height || 200;
+        const ratio = Math.min(boxW/asset.img.width, boxH/asset.img.height);
+        const w = asset.img.width*ratio, h = asset.img.height*ratio;
+        c.drawImage(asset.img, -w/2, -h/2, w, h);
+      }
+    }
+    c.restore();
+  });
+  c.restore();
+}
+
+// ---------- Playback ----------
+function enablePlayback(){
+  playBtn.disabled = false;
+  restartBtn.disabled = false;
+  exportBtn.disabled = false;
+  scrub.disabled = false;
+  scrub.max = Math.round(plan.duration * 100);
+  pausedAt = 0;
+  drawFrame(0);
+  updateTimeLabel(0);
+}
+
+playBtn.addEventListener('click', () => {
+  if(!plan) return;
+  if(playing){ pausePlayback(); } else { startPlayback(); }
+});
+restartBtn.addEventListener('click', () => { pausedAt = 0; pausePlayback(); drawFrame(0); updateTimeLabel(0); scrub.value = 0; });
+
+function startPlayback(){
+  playing = true;
+  playBtn.textContent = '⏸ Pause';
+  startTime = performance.now() - pausedAt*1000;
+  tick();
+}
+function pausePlayback(){
+  playing = false;
+  playBtn.textContent = '▶ Play';
+  if(rafId) cancelAnimationFrame(rafId);
+}
+function tick(){
+  if(!playing) return;
+  const t = (performance.now() - startTime) / 1000;
+  if(t >= plan.duration){
+    pausedAt = plan.duration;
+    drawFrame(plan.duration);
+    updateTimeLabel(plan.duration);
+    scrub.value = scrub.max;
+    pausePlayback();
+    return;
+  }
+  pausedAt = t;
+  drawFrame(t);
+  updateTimeLabel(t);
+  scrub.value = Math.round(t*100);
+  rafId = requestAnimationFrame(tick);
+}
+function updateTimeLabel(t){
+  timeLabel.textContent = `${t.toFixed(1)} / ${plan.duration.toFixed(1)}s`;
+}
+scrub.addEventListener('input', () => {
+  if(!plan) return;
+  pausePlayback();
+  const t = scrub.value/100;
+  pausedAt = t;
+  drawFrame(t);
+  updateTimeLabel(t);
+});
+
+// ---------- Export ----------
+exportBtn.addEventListener('click', exportVideo);
+
+async function exportVideo(){
+  if(!plan) return;
+  pausePlayback();
+  exportBtn.disabled = true;
+
+  const targetW = parseInt(document.getElementById('exportRes').value, 10);
+  const targetH = Math.round(targetW * (plan.height / plan.width));
+
+  // Off-screen canvas at the chosen export resolution
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = targetW;
+  exportCanvas.height = targetH;
+  const exportCtx = exportCanvas.getContext('2d');
+
+  // Pick the best available codec — MP4/H.264 first (best compatibility with
+  // Facebook, Instagram, TikTok, YouTube), fall back to WebM if the browser
+  // can't record MP4 directly.
+  const candidates = [
+    'video/mp4;codecs=avc1.640028',
+    'video/mp4;codecs=h264',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm'
+  ];
+  let mimeType = candidates.find(t => MediaRecorder.isTypeSupported(t));
+  if(!mimeType){ setStatus(exportStatus, 'This browser cannot record video.', true); exportBtn.disabled = false; return; }
+  const isMp4 = mimeType.startsWith('video/mp4');
+  const ext = isMp4 ? 'mp4' : 'webm';
+
+  setStatus(exportStatus, `Recording at ${targetW}×${targetH} (${ext.toUpperCase()})… this can take a moment for 4K.`);
+  recordedChunks = [];
+
+  // Bitrate scales with resolution so 4K stays crisp without an absurd file size
+  const pixels = targetW * targetH;
+  const bitrate = Math.round(Math.min(45_000_000, Math.max(6_000_000, pixels * 6.5)));
+
+  const stream = exportCanvas.captureStream(30);
+  mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: bitrate });
+  mediaRecorder.ondataavailable = e => { if(e.data.size>0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, {type: mimeType});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `animation_${targetW}x${targetH}.${ext}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    const mb = (blob.size/1024/1024).toFixed(1);
+    setStatus(exportStatus, `Downloaded animation_${targetW}x${targetH}.${ext} (${mb} MB)${!isMp4 ? ' — your browser could only record WebM; most social platforms accept it, but rename/convert to .mp4 if a platform rejects it.' : ''}`, false, true);
+    exportBtn.disabled = false;
+  };
+
+  mediaRecorder.start();
+  let t0 = performance.now();
+  function renderTick(){
+    const t = (performance.now()-t0)/1000;
+    if(t >= plan.duration){
+      drawFrame(plan.duration, exportCtx, exportCanvas);
+      mediaRecorder.stop();
+      return;
+    }
+    drawFrame(t, exportCtx, exportCanvas);
+    requestAnimationFrame(renderTick);
+  }
+  renderTick();
+}
+
+// initial blank frame
+ctx.fillStyle = '#111';
+ctx.fillRect(0,0,canvas.width,canvas.height);
+ctx.fillStyle = '#888';
+ctx.font = '24px Arial';
+ctx.textAlign = 'center';
+ctx.fillText('Your animation will appear here', canvas.width/2, canvas.height/2);
+</script>
+</body>
+</html>
