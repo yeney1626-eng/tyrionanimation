@@ -164,9 +164,46 @@
       </div>
 
       <div class="panel">
-        <span class="eyebrow">01 — The Idea</span>
-        <label for="idea">What's the animation about?</label>
-        <textarea id="idea" placeholder="e.g. A 15-second explainer introducing 'Driftwood', a coffee subscription. Open on the logo, show three steps (pick beans, roast, ship), close on the tagline 'Fresh, on your schedule.'"></textarea>
+        <span class="eyebrow">01 — Layout</span>
+        <label>Layout reference (optional)</label>
+        <div class="dropzone" id="layoutDropzone">Click or drop an image to use as a structural guide</div>
+        <input type="file" id="layoutInput" accept="image/*" style="display:none">
+        <div id="layoutPreview"></div>
+        <div class="status">The AI looks at this image's composition — where the headline, image, and button sit — and follows that structure. It is a reference only and won't be shown in the final animation.</div>
+      </div>
+
+      <div class="panel">
+        <span class="eyebrow">02 — 1st Part (the hook)</span>
+        <label>Hook image (optional)</label>
+        <div class="dropzone" id="hookDropzone">Click or drop the image that should grab attention first</div>
+        <input type="file" id="hookInput" accept="image/*" style="display:none">
+        <div id="hookPreview"></div>
+        <label for="hookText">What should the hook say or show?</label>
+        <textarea id="hookText" placeholder="e.g. Bold logo reveal with a quick zoom and flash, or a product shot that snaps into frame"></textarea>
+      </div>
+
+      <div class="panel">
+        <span class="eyebrow">03 — Content</span>
+        <label>Content images (optional, can add several)</label>
+        <div class="dropzone" id="contentDropzone">Click or drop supporting images (product shots, icons, photos)</div>
+        <input type="file" id="contentInput" accept="image/*" multiple style="display:none">
+        <div id="contentPreview"></div>
+        <label for="contentPosition">Position</label>
+        <input type="text" id="contentPosition" placeholder="e.g. Centered below the hook, stacked vertically">
+        <label for="contentRequirements">Requirements</label>
+        <textarea id="contentRequirements" placeholder="e.g. Show 3 benefits as short bullet-style lines, each appearing one after another"></textarea>
+      </div>
+
+      <div class="panel">
+        <span class="eyebrow">04 — Call to Action</span>
+        <label for="ctaText">CTA text</label>
+        <input type="text" id="ctaText" placeholder="e.g. Shop Now, Sign Up Today, Book a Demo">
+        <div class="status">Gets a distinct, attention-catching animation treatment at the end (pulse, bounce, or pop-in on a button shape).</div>
+      </div>
+
+      <div class="panel">
+        <span class="eyebrow">05 — Other Instructions</span>
+        <textarea id="otherInstructions" placeholder="Anything else — brand colors, tone, things to avoid, specific wording…"></textarea>
 
         <div class="row">
           <div>
@@ -196,11 +233,6 @@
           <option value="1080x1080">Square 1:1 — feed post (1080×1080)</option>
           <option value="1280x720">Landscape 16:9 — YouTube/web (1280×720)</option>
         </select>
-
-        <label>Your assets (images become scene elements)</label>
-        <div class="dropzone" id="dropzone">Click or drop images here (logos, photos, icons)</div>
-        <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
-        <div id="assetList"></div>
 
         <button class="primary" id="generateBtn">Generate Animation</button>
         <div class="status" id="genStatus"></div>
@@ -246,7 +278,10 @@
 
 <script>
 // ---------- State ----------
-let assets = []; // {dataUrl, img(Image), name}
+let layoutAsset = null;  // {dataUrl, img, name} — vision reference only, never rendered
+let hookAsset = null;    // {dataUrl, img, name} — attention-grabbing opener, rendered
+let contentAssets = [];  // [{dataUrl, img, name}] — body images, rendered
+let assets = [];         // render-eligible assets (hook + content), set when generating
 let plan = null;
 let playing = false;
 let startTime = 0; // performance.now() offset
@@ -257,9 +292,6 @@ let recordedChunks = [];
 
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
-const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('fileInput');
-const assetList = document.getElementById('assetList');
 const generateBtn = document.getElementById('generateBtn');
 const genStatus = document.getElementById('genStatus');
 const planToggle = document.getElementById('planToggle');
@@ -271,72 +303,144 @@ const scrub = document.getElementById('scrub');
 const timeLabel = document.getElementById('timeLabel');
 const exportStatus = document.getElementById('exportStatus');
 
-// ---------- Asset handling ----------
-dropzone.addEventListener('click', () => fileInput.click());
-dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
-dropzone.addEventListener('drop', e => {
-  e.preventDefault(); dropzone.classList.remove('drag');
-  handleFiles(e.dataTransfer.files);
-});
-fileInput.addEventListener('change', e => handleFiles(e.target.files));
-
-function handleFiles(files){
-  [...files].forEach(file => {
-    if(!file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const img = new Image();
-      img.onload = () => {
-        assets.push({dataUrl: ev.target.result, img, name: file.name});
-        renderAssetList();
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
+// ---------- Asset handling (role-based) ----------
+function setupSingleImageDropzone(zoneId, inputId, previewId, onSet){
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  const preview = document.getElementById(previewId);
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag');
+    const file = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+    if(file) loadImageFile(file, asset => { onSet(asset); renderSingle(preview, asset, () => { onSet(null); renderSingle(preview, null, null); }); });
+  });
+  input.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if(file) loadImageFile(file, asset => { onSet(asset); renderSingle(preview, asset, () => { onSet(null); renderSingle(preview, null, null); }); });
   });
 }
 
-function renderAssetList(){
-  assetList.innerHTML = '';
-  assets.forEach((a, i) => {
+function renderSingle(previewEl, asset, onRemove){
+  previewEl.innerHTML = '';
+  if(!asset) return;
+  const div = document.createElement('div');
+  div.className = 'asset-thumb';
+  div.style.backgroundImage = `url(${asset.dataUrl})`;
+  const btn = document.createElement('button');
+  btn.textContent = '×';
+  btn.onclick = (ev) => { ev.stopPropagation(); onRemove(); };
+  div.appendChild(btn);
+  previewEl.appendChild(div);
+}
+
+function loadImageFile(file, cb){
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => cb({dataUrl: ev.target.result, img, name: file.name});
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+setupSingleImageDropzone('layoutDropzone', 'layoutInput', 'layoutPreview', asset => { layoutAsset = asset; });
+setupSingleImageDropzone('hookDropzone', 'hookInput', 'hookPreview', asset => { hookAsset = asset; });
+
+// Content images: multiple
+const contentDropzone = document.getElementById('contentDropzone');
+const contentInput = document.getElementById('contentInput');
+const contentPreview = document.getElementById('contentPreview');
+contentDropzone.addEventListener('click', () => contentInput.click());
+contentDropzone.addEventListener('dragover', e => { e.preventDefault(); contentDropzone.classList.add('drag'); });
+contentDropzone.addEventListener('dragleave', () => contentDropzone.classList.remove('drag'));
+contentDropzone.addEventListener('drop', e => {
+  e.preventDefault(); contentDropzone.classList.remove('drag');
+  handleContentFiles(e.dataTransfer.files);
+});
+contentInput.addEventListener('change', e => handleContentFiles(e.target.files));
+
+function handleContentFiles(files){
+  [...files].forEach(file => {
+    if(!file.type.startsWith('image/')) return;
+    loadImageFile(file, asset => { contentAssets.push(asset); renderContentList(); });
+  });
+}
+
+function renderContentList(){
+  contentPreview.innerHTML = '';
+  contentPreview.style.display = 'flex';
+  contentPreview.style.flexWrap = 'wrap';
+  contentPreview.style.gap = '8px';
+  contentPreview.style.marginTop = '10px';
+  contentAssets.forEach((a, i) => {
     const div = document.createElement('div');
     div.className = 'asset-thumb';
     div.style.backgroundImage = `url(${a.dataUrl})`;
     const btn = document.createElement('button');
     btn.textContent = '×';
-    btn.onclick = (ev) => { ev.stopPropagation(); assets.splice(i,1); renderAssetList(); };
+    btn.onclick = (ev) => { ev.stopPropagation(); contentAssets.splice(i,1); renderContentList(); };
     div.appendChild(btn);
-    assetList.appendChild(div);
+    contentPreview.appendChild(div);
   });
+}
+
+// Combined render-eligible assets (layout image excluded — vision reference only)
+function getRenderableAssets(){
+  return [...(hookAsset ? [hookAsset] : []), ...contentAssets];
 }
 
 // ---------- AI plan generation ----------
 generateBtn.addEventListener('click', generatePlan);
 
 async function generatePlan(){
-  const idea = document.getElementById('idea').value.trim();
-  if(!idea){ setStatus(genStatus, 'Describe your idea first.', true); return; }
+  const hookText = document.getElementById('hookText').value.trim();
+  const contentPosition = document.getElementById('contentPosition').value.trim();
+  const contentRequirements = document.getElementById('contentRequirements').value.trim();
+  const ctaText = document.getElementById('ctaText').value.trim();
+  const otherInstructions = document.getElementById('otherInstructions').value.trim();
+
+  if(!hookText && !contentRequirements && !ctaText){
+    setStatus(genStatus, 'Fill in at least the hook, content requirements, or CTA so the AI has something to work with.', true);
+    return;
+  }
+
+  assets = getRenderableAssets(); // hook image (if any) at index 0, then content images
 
   const style = document.getElementById('style').value;
   const duration = document.getElementById('duration').value;
   const [fmtW, fmtH] = document.getElementById('format').value.split('x').map(Number);
-  const assetDescriptions = assets.map((a,i) => `assetIndex ${i}: file named "${a.name}"`).join('\n') || 'No image assets provided — use text and simple vector shapes (rect/circle) only.';
+
+  const assetDescriptions = assets.map((a,i) => {
+    const role = (hookAsset && a === hookAsset) ? 'HOOK image — the attention-grabbing opener' : 'content image';
+    return `assetIndex ${i}: "${a.name}" (${role})`;
+  }).join('\n') || 'No image assets provided — use text and simple vector shapes (rect/circle) only.';
 
   generateBtn.disabled = true;
   setStatus(genStatus, 'Directing the animation…');
 
-  const schemaPrompt = `You are a motion graphics director. Output ONLY a single JSON object (no markdown fences, no prose) describing a ${duration}-second animated explainer, canvas size ${fmtW}x${fmtH}.
+  const briefParts = [];
+  if(hookText) briefParts.push(`1ST PART / HOOK (must appear first, designed to catch attention immediately): ${hookText}`);
+  if(contentPosition || contentRequirements) briefParts.push(`CONTENT (must visually match and follow the layout reference if one was provided)\n  Position: ${contentPosition || 'use designer judgment based on layout reference'}\n  Requirements: ${contentRequirements || 'use designer judgment'}`);
+  if(ctaText) briefParts.push(`CALL TO ACTION (closing element, give it a distinct catchy "pop" animation — pulse, bounce, or snap into place — and treat it visually like a button): "${ctaText}"`);
+  if(otherInstructions) briefParts.push(`OTHER INSTRUCTIONS: ${otherInstructions}`);
+  const fullBrief = briefParts.join('\n\n');
+
+  const layoutNote = layoutAsset
+    ? `A LAYOUT REFERENCE IMAGE is attached. Study its composition — where headline text, imagery, and the call-to-action sit, their relative sizes and spacing — and have your element positions and sizing follow that same structure. Do NOT render or describe the reference image itself as content; it is a structural guide only.`
+    : `No layout reference was provided — use your own best judgment for a clean, conversion-focused ad layout appropriate to the format.`;
+
+  const schemaPrompt = `You are a motion graphics director building a ${duration}-second animated social ad, canvas size ${fmtW}x${fmtH}.
 
 Style direction: ${style}
 
-User's idea:
-"""${idea}"""
+${layoutNote}
 
-Available image assets (reference by assetIndex, do NOT invent assets beyond what's listed):
-${assetDescriptions}
+CREATIVE BRIEF:
+${fullBrief}
 
-Return JSON matching exactly this schema:
+Output ONLY a single JSON object (no markdown fences, no prose) matching exactly this schema:
 {
   "width": ${fmtW},
   "height": ${fmtH},
@@ -345,7 +449,7 @@ Return JSON matching exactly this schema:
   "elements": [
     {
       "type": "image" | "text" | "rect" | "circle",
-      "assetIndex": 0,            // required only if type is "image", must reference a listed assetIndex
+      "assetIndex": 0,            // required only if type is "image", must reference a listed assetIndex below
       "text": "string",            // required only if type is "text"
       "color": "#hexcolor",        // text fill color, or shape fill color
       "fontSize": 48,              // for text
@@ -364,8 +468,14 @@ Return JSON matching exactly this schema:
   ]
 }
 
+Available image assets (reference by assetIndex, do NOT invent assets beyond what's listed):
+${assetDescriptions}
+
 Rules:
 - x,y are the CENTER point of the element in canvas pixels (0,0 top-left, ${fmtW}x${fmtH} canvas). This is a ${fmtW>fmtH ? 'landscape' : fmtW===fmtH ? 'square' : 'tall portrait'} format — design layouts and text sizing accordingly (for portrait/square, stack elements vertically and keep text large enough to read on a phone screen; avoid wide horizontal layouts that would get cropped).
+- The HOOK element(s) must appear first and be the most visually dominant moment in the first 1-2 seconds.
+- The CONTENT section must visually match the layout reference's structure if one was given.
+- The CALL TO ACTION must appear near the end with a distinct, energetic animation (e.g. a bounce/pulse loop or a sharp pop-in with overshoot) so it reads as clickable.
 - t in keyframes is a fraction (0 to 1) of that element's own (end-start) duration. Always include a keyframe at t=0 and t=1. Use 3-6 keyframes per element for natural easing (ease in, hold, ease out).
 - scale 0 means invisible/tiny, 1 is natural size.
 - Stagger element start/end times to build a coherent scene-by-scene sequence across the full ${duration} seconds — do not have everything appear at once unless that's the desired effect.
@@ -379,11 +489,17 @@ Rules:
   try{ if(geminiKey) localStorage.setItem('geminiKey', geminiKey); }catch(e){}
 
   async function callGemini(){
+    const parts = [{ text: schemaPrompt }];
+    if(layoutAsset){
+      const base64 = layoutAsset.dataUrl.split(',')[1];
+      const mimeMatch = layoutAsset.dataUrl.match(/^data:(image\/[a-zA-Z+]+);/);
+      parts.unshift({ inlineData: { mimeType: mimeMatch ? mimeMatch[1] : 'image/png', data: base64 } });
+    }
     const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: schemaPrompt }] }],
+        contents: [{ parts }],
         generationConfig: { temperature: 0.8 }
       })
     });
@@ -397,7 +513,10 @@ Rules:
 
   async function callPuter(){
     if(typeof puter === 'undefined') throw new Error('fallback AI library failed to load');
-    const response = await puter.ai.chat(schemaPrompt, { model: "anthropic/claude-sonnet-4-6", temperature: 0.8 });
+    // Puter's vision path takes a single image URL; pass the layout reference if present, text-only otherwise
+    const response = layoutAsset
+      ? await puter.ai.chat(schemaPrompt, layoutAsset.dataUrl, { model: "anthropic/claude-sonnet-4-6", temperature: 0.8 })
+      : await puter.ai.chat(schemaPrompt, { model: "anthropic/claude-sonnet-4-6", temperature: 0.8 });
     if(typeof response === 'string') return response;
     if(response?.message?.content){
       const c = response.message.content;
